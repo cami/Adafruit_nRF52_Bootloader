@@ -21,7 +21,7 @@ SD_FILENAME  = $(SD_NAME)_nrf52_$(SD_VERSION)
 SD_API_PATH  = $(SD_PATH)/$(SD_FILENAME)_API
 SD_HEX       = $(SD_PATH)/$(SD_FILENAME)_softdevice.hex
 
-LD_FILE      = $(SRC_PATH)/linker/$(SD_NAME)_v$(word 1, $(subst ., ,$(SD_VERSION))).ld
+LD_FILE      = $(SRC_PATH)/linker/$(MCU_SUB_VARIANT)_$(SD_NAME)_v$(word 1, $(subst ., ,$(SD_VERSION))).ld
 
 MERGED_FNAME = $(OUTPUT_FILENAME)_$(SD_NAME)_$(SD_VERSION)
 
@@ -41,7 +41,9 @@ else
 NRFJPROG = nrfjprog
 endif
 
-# For Windows
+# auto-detect BMP on macOS, otherwise have to specify
+BMP_PORT ?= $(shell ls -1 /dev/cu.usbmodem????????1 | head -1)
+
 ifeq ($(OS),Windows_NT)
 PROGFILES = C:/Program Files (x86)
 GNU_INSTALL_ROOT = $(PROGFILES)/GNU Tools ARM Embedded/7 2018-q2-update/bin/
@@ -74,6 +76,9 @@ NM      := '$(GNU_INSTALL_ROOT)$(GNU_PREFIX)-nm'
 OBJDUMP := '$(GNU_INSTALL_ROOT)$(GNU_PREFIX)-objdump'
 OBJCOPY := '$(GNU_INSTALL_ROOT)$(GNU_PREFIX)-objcopy'
 SIZE    := '$(GNU_INSTALL_ROOT)$(GNU_PREFIX)-size'
+GDB     := '$(GNU_INSTALL_ROOT)$(GNU_PREFIX)-gdb'
+
+GDB_BMP = arm-none-eabi-gdb -ex 'target extended-remote $(BMP_PORT)' -ex 'monitor swdp_scan' -ex 'attach 1'
 
 #function for removing duplicates in a list
 remduplicates = $(strip $(if $1,$(firstword $1) $(call remduplicates,$(filter-out $(firstword $1),$1))))
@@ -83,23 +88,33 @@ remduplicates = $(strip $(if $1,$(firstword $1) $(call remduplicates,$(filter-ou
 #*********************************
 BOARD_LIST = $(sort $(subst .h,,$(subst src/boards/,,$(wildcard src/boards/*))))
 
-NRF52832_BOARDLIST = feather_nrf52832
-IS_52832 = $(filter $(BOARD),$(NRF52832_BOARDLIST))
-
 ifeq ($(filter $(BOARD),$(BOARD_LIST)),)
   $(info You must provide a BOARD parameter with 'BOARD='. Supported boards are:)
   $(info $(BOARD_LIST))
   $(error Invalid BOARD specified)
 endif
 
+# Build directory
 BUILD = _build-$(BOARD)
 
-ifneq ($(IS_52832),)
-SD_NAME = s132
-DFU_DEV_REV = 0xADAF
+# Board specific
+-include src/boards/$(BOARD)/board.mk
+
+# MCU_SUB_VARIANT can be nrf52 (nrf52832), nrf52833, nrf52840
+ifeq ($(MCU_SUB_VARIANT),nrf52)
+  SD_NAME = s132
+  DFU_DEV_REV = 0xADAF
+  MCU_FLAGS = -DNRF52 -DNRF52832_XXAA -DS132
+else ifeq ($(MCU_SUB_VARIANT),nrf52833)
+  SD_NAME = s140
+  DFU_DEV_REV = 52840
+  MCU_FLAGS = -DNRF52833_XXAA -DS140
+else ifeq ($(MCU_SUB_VARIANT),nrf52840)
+  SD_NAME = s140
+  DFU_DEV_REV = 52840
+  MCU_FLAGS = -DNRF52840_XXAA -DS140
 else
-SD_NAME = s140
-DFU_DEV_REV = 52840
+  $(error Sub Variant $(MCU_SUB_VARIANT) is unknown)
 endif
 
 #******************************************************************************
@@ -113,9 +128,13 @@ C_SOURCE_FILES += $(SRC_PATH)/flash_nrf5x.c
 C_SOURCE_FILES += $(SRC_PATH)/dfu_ble_svc.c
 C_SOURCE_FILES += $(SRC_PATH)/dfu_init.c
 
+# all sources files in specific board
+C_SOURCE_FILES += $(wildcard $(SRC_PATH)/boards/$(BOARD)/*.c)
+
 # nrfx
 C_SOURCE_FILES += $(NRFX_PATH)/drivers/src/nrfx_power.c
-C_SOURCE_FILES += $(NRFX_PATH)/hal/nrf_nvmc.c
+C_SOURCE_FILES += $(NRFX_PATH)/drivers/src/nrfx_nvmc.c
+C_SOURCE_FILES += $(NRFX_PATH)/mdk/system_$(MCU_SUB_VARIANT).c
 
 # SDK 11 files
 C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/bootloader.c
@@ -142,10 +161,8 @@ C_SOURCE_FILES += $(SDK_PATH)/libraries/hci/hci_slip.c
 C_SOURCE_FILES += $(SDK_PATH)/libraries/hci/hci_transport.c
 C_SOURCE_FILES += $(SDK_PATH)/libraries/util/nrf_assert.c
 
-ifneq ($(IS_52832),)
-
-C_SOURCE_FILES += $(NRFX_PATH)/mdk/system_nrf52.c
-
+# UART or USB Serial
+ifeq ($(MCU_SUB_VARIANT),nrf52)
 C_SOURCE_FILES += $(SDK_PATH)/libraries/uart/app_uart.c
 C_SOURCE_FILES += $(SDK_PATH)/drivers_nrf/uart/nrf_drv_uart.c
 C_SOURCE_FILES += $(SDK_PATH)/drivers_nrf/common/nrf_drv_common.c
@@ -155,25 +172,19 @@ IPATH += $(SDK_PATH)/drivers_nrf/common
 IPATH += $(SDK_PATH)/drivers_nrf/uart
 
 else
-
 # src
 C_SOURCE_FILES += $(SRC_PATH)/usb/usb_desc.c
 C_SOURCE_FILES += $(SRC_PATH)/usb/usb.c
 C_SOURCE_FILES += $(SRC_PATH)/usb/msc_uf2.c
 C_SOURCE_FILES += $(SRC_PATH)/usb/uf2/ghostfat.c
 
-# nrfx
-C_SOURCE_FILES += $(NRFX_PATH)/mdk/system_nrf52840.c
-
-# Tinyusb stack
+# TinyUSB stack
 C_SOURCE_FILES += $(TUSB_PATH)/portable/nordic/nrf5x/dcd_nrf5x.c
-C_SOURCE_FILES += $(TUSB_PATH)/portable/nordic/nrf5x/hal_nrf5x.c
 C_SOURCE_FILES += $(TUSB_PATH)/common/tusb_fifo.c
 C_SOURCE_FILES += $(TUSB_PATH)/device/usbd.c
 C_SOURCE_FILES += $(TUSB_PATH)/device/usbd_control.c
 C_SOURCE_FILES += $(TUSB_PATH)/class/cdc/cdc_device.c
 C_SOURCE_FILES += $(TUSB_PATH)/class/msc/msc_device.c
-C_SOURCE_FILES += $(TUSB_PATH)/class/custom/custom_device.c
 C_SOURCE_FILES += $(TUSB_PATH)/tusb.c
 
 endif
@@ -182,11 +193,7 @@ endif
 #******************************************************************************
 # Assembly Files
 #******************************************************************************
-ifneq ($(IS_52832),)
-ASM_SOURCE_FILES  = $(NRFX_PATH)/mdk/gcc_startup_nrf52.S
-else
-ASM_SOURCE_FILES  = $(NRFX_PATH)/mdk/gcc_startup_nrf52840.S
-endif
+ASM_SOURCE_FILES  = $(NRFX_PATH)/mdk/gcc_startup_$(MCU_SUB_VARIANT).S
 
 #******************************************************************************
 # INCLUDE PATH
@@ -206,6 +213,7 @@ IPATH += $(NRFX_PATH)
 IPATH += $(NRFX_PATH)/mdk
 IPATH += $(NRFX_PATH)/hal
 IPATH += $(NRFX_PATH)/drivers/include
+IPATH += $(NRFX_PATH)/drivers/src
 
 IPATH += $(SDK11_PATH)/libraries/bootloader_dfu/hci_transport
 IPATH += $(SDK11_PATH)/libraries/bootloader_dfu
@@ -261,21 +269,13 @@ CFLAGS += -DSWI_DISABLE0
 CFLAGS += -DSOFTDEVICE_PRESENT
 CFLAGS += -DFLOAT_ABI_HARD
 CFLAGS += -DDFU_APP_DATA_RESERVED=7*4096
+CFLAGS += $(MCU_FLAGS)
 
 CFLAGS += -DUF2_VERSION='"$(GIT_VERSION) $(GIT_SUBMODULE_VERSIONS) $(SD_NAME) $(SD_VERSION)"'
 CFLAGS += -DBLEDIS_FW_VERSION='"$(GIT_VERSION) $(SD_NAME) $(SD_VERSION)"'
 
 _VER = $(subst ., ,$(word 1, $(subst -, ,$(GIT_VERSION))))
 CFLAGS += -DMK_BOOTLOADER_VERSION='($(word 1,$(_VER)) << 16) + ($(word 2,$(_VER)) << 8) + $(word 3,$(_VER))'
-
-ifneq ($(IS_52832),)
-CFLAGS += -DNRF52
-CFLAGS += -DNRF52832_XXAA
-CFLAGS += -DS132
-else
-CFLAGS += -DNRF52840_XXAA
-CFLAGS += -DS140
-endif
 
 
 #******************************************************************************
@@ -305,14 +305,7 @@ ASMFLAGS += -DBLE_STACK_SUPPORT_REQD
 ASMFLAGS += -DSWI_DISABLE0
 ASMFLAGS += -DSOFTDEVICE_PRESENT
 ASMFLAGS += -DFLOAT_ABI_HARD
-
-ifneq ($(IS_52832),)
-ASMFLAGS += -DNRF52
-ASMFLAGS += -DS132
-else
-ASMFLAGS += -DNRF52840_XXAA
-ASMFLAGS += -DS140
-endif
+ASMFLAGS += $(MCU_FLAGS)
 
 C_SOURCE_FILE_NAMES = $(notdir $(C_SOURCE_FILES))
 C_PATHS = $(call remduplicates, $(dir $(C_SOURCE_FILES) ) )
@@ -370,6 +363,13 @@ sd:
 erase:
 	@echo Erasing chip
 	$(NRFJPROG) --eraseall -f nrf52
+
+gdbflash: $(BUILD)/$(MERGED_FNAME).hex
+	@echo Flashing: $<
+	@$(GDB_BMP) -nx --batch -ex 'load $<' -ex 'compare-sections' -ex 'kill'
+
+gdb: $(BUILD)/$(OUTPUT_FILENAME)-nosd.out
+	$(GDB_BMP) $<
 
 #******************* Compile rules *******************
 

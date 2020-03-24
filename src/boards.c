@@ -42,12 +42,20 @@
 //------------- IMPLEMENTATION -------------//
 void button_init(uint32_t pin)
 {
-  nrf_gpio_cfg_sense_input(pin, BUTTON_PULL, NRF_GPIO_PIN_SENSE_LOW);
+  if ( BUTTON_PULL == NRF_GPIO_PIN_PULLDOWN )
+  {
+    nrf_gpio_cfg_sense_input(pin, BUTTON_PULL, NRF_GPIO_PIN_SENSE_HIGH);
+  }
+  else
+  {
+    nrf_gpio_cfg_sense_input(pin, BUTTON_PULL, NRF_GPIO_PIN_SENSE_LOW);
+  }
 }
 
 bool button_pressed(uint32_t pin)
 {
-  return (nrf_gpio_pin_read(pin) == 0) ? true : false;
+  uint32_t const active_state = (BUTTON_PULL == NRF_GPIO_PIN_PULLDOWN ? 1 : 0);
+  return nrf_gpio_pin_read(pin) == active_state;
 }
 
 void board_init(void)
@@ -96,7 +104,6 @@ void board_teardown(void)
 #if defined(LED_NEOPIXEL) || defined(LED_RGB_RED_PIN)
   neopixel_teardown();
 #endif
-  // Button
 
   // Stop RTC1 used by app_timer
   NVIC_DisableIRQ(RTC1_IRQn);
@@ -107,6 +114,13 @@ void board_teardown(void)
 
   // Stop LF clock
   NRF_CLOCK->TASKS_LFCLKSTOP = 1UL;
+
+  // make sure all pins are back in reset state
+  // NUMBER_OF_PINS is defined in nrf_gpio.h
+  for (int i = 0; i < NUMBER_OF_PINS; ++i)
+  {
+    nrf_gpio_cfg_default(i);
+  }
 }
 
 static uint32_t _systick_count = 0;

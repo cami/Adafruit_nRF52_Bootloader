@@ -1,11 +1,15 @@
 # Adafruit nRF52 Bootloader
 
-[![Build Status](https://travis-ci.com/adafruit/Adafruit_nRF52_Bootloader.svg?branch=master)](https://travis-ci.com/adafruit/Adafruit_nRF52_Bootloader)
+[![Build Status](https://github.com/adafruit/Adafruit_nRF52_Bootloader/workflows/Build/badge.svg)](https://github.com/adafruit/Adafruit_nRF52_Bootloader/actions)
 
 This is a CDC/DFU/UF2 bootloader for nRF52 boards.
 
+- [Adafruit CLUE](https://www.adafruit.com/product/4500)
+- [Adafruit Circuit Playground Bluefruit](https://www.adafruit.com/product/4333)
 - [Adafruit Feather nRF52832](https://www.adafruit.com/product/3406)
 - [Adafruit Feather nRF52840 Express](https://www.adafruit.com/product/4062)
+- [Adafruit Feather nRF52840 Sense](https://www.adafruit.com/product/4516)
+- [Adafruit ItsyBitsy nRF52840 Express](https://www.adafruit.com/product/4481)
 - Adafruit Metro nRF52840 Express
 - [Electronut Labs Papyr](https://docs.electronut.in/papyr/)
 - MakerDiary MDK nRF52840 USB Dongle
@@ -59,8 +63,8 @@ There are two pins, `DFU` and `FRST` that bootloader will check upon reset/power
 - `Double Reset` Reset twice within 500 ms will enter DFU with UF2 and CDC support (only works with nRF52840)
 - `DFU = LOW` and `FRST = HIGH`: Enter bootloader with UF2 and CDC support
 - `DFU = LOW` and `FRST = LOW`: Enter bootloader with OTA, to upgrade with a mobile application such as Nordic nrfConnect/Toolbox
-- `DFU = HIGH and `FRST = LOW`: Factory Reset mode: erase firmware application and its data
-- `DFU = HIGH and `FRST = HIGH`: Go to application code if it is present, otherwise enter DFU with UF2
+- `DFU = HIGH` and `FRST = LOW`: Factory Reset mode: erase firmware application and its data
+- `DFU = HIGH` and `FRST = HIGH`: Go to application code if it is present, otherwise enter DFU with UF2
 - The `GPREGRET` register can also be set to force the bootloader can enter any of above modes (plus a CDC-only mode for Arduino).
 `GPREGRET` is set by the application before performing a soft reset.
 
@@ -96,7 +100,7 @@ This is preferred if you are not developing/customizing the bootloader.
 Pre-builtin binaries are available on GitHub [releases](https://github.com/adafruit/Adafruit_nRF52_Bootloader/releases)
 
 Note: The bootloader can be downgraded. Since the binary release is a merged version of
-of both bootloader and the Nordic SoftDevice, you can freely upgrade/downgrade to any version you like.
+both bootloader and the Nordic SoftDevice, you can freely upgrade/downgrade to any version you like.
 
 ## How to compile and build
 
@@ -108,7 +112,7 @@ You must have have  a J-Link available to "unbrick" your device.
 Prerequisites
 
 - ARM GCC
-- Nordic's [nRF5x Command Line Tools](http://infocenter.nordicsemi.com/index.jsp?topic=%2Fcom.nordic.infocenter.tools%2Fdita%2Ftools%2Fnrf5x_command_line_tools%2Fnrf5x_installation.html)
+- Nordic's [nRF5x Command Line Tools](https://www.nordicsemi.com/Software-and-Tools/Development-Tools/nRF-Command-Line-Tools)
 
 To build:
 
@@ -162,7 +166,13 @@ Compiling file: main.c
 make: *** [_build/main.o] Error 127
 ```
 
-... you may need to edit the `Makefile` and update `GNU_INSTALL_ROOT` to point to the root path of your GCC ARM toolchain.
+... you may need to pass the location of the GCC ARM toolchain binaries to `make` using
+the variable `GNU_INSTALL_ROOT` as below:
+```
+$ make GNU_INSTALL_ROOT=/opt/gcc-arm-none-eabi-9-2019-q4-major/bin/ BOARD=feather_nrf52832 all
+```
+
+_Please note that the path needs a trailing path separator (a `/`)_
 
 #### 2. `mergehex: No such file or directory`
 

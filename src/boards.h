@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include "nrf.h"
 #include "nrf_gpio.h"
 
 #include "board.h"
@@ -35,6 +36,7 @@
 #ifndef BUTTON_DFU
 #define BUTTON_DFU      BUTTON_1
 #endif
+
 #ifndef BUTTON_FRESET
 #define BUTTON_FRESET   BUTTON_2
 #endif

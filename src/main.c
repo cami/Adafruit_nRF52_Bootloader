@@ -62,14 +62,15 @@
 #include "nrf_error.h"
 
 #include "boards.h"
+#include "uf2/uf2.h"
 
 #include "pstorage_platform.h"
 #include "nrf_mbr.h"
 #include "pstorage.h"
+#include "nrfx_nvmc.h"
 
-#include "nrf_nvmc.h"
 
-#ifdef NRF52840_XXAA
+#ifdef NRF_USBD
 #include "nrf_usbd.h"
 #include "tusb.h"
 
@@ -110,11 +111,16 @@ void usb_teardown(void);
 #define DFU_MAGIC_LTEM_RESET            0x64
 
 #define DFU_DBL_RESET_MAGIC             0x5A1AD5      // SALADS
+#define DFU_DBL_RESET_APP               0x4ee5677e
 #define DFU_DBL_RESET_DELAY             500
 #define DFU_DBL_RESET_MEM               0x20007F7C
 
 #define BOOTLOADER_VERSION_REGISTER     NRF_TIMER2->CC[0]
 #define DFU_SERIAL_STARTUP_INTERVAL     1000
+
+// Allow for using reset button essentially to swap between application and bootloader.
+// This is controlled by a flag in the app and is the behavior of CPX and all Arcade boards when using MakeCode.
+#define APP_ASKS_FOR_SINGLE_TAP_RESET() (*((uint32_t*)(USER_FLASH_START + 0x200)) == 0x87eeb07c)
 
 // These value must be the same with one in dfu_transport_ble.c
 #define BLEGAP_EVENT_LENGTH             6
@@ -125,9 +131,12 @@ enum { BLE_CONN_CFG_HIGH_BANDWIDTH = 1 };
 #define APPDATA_ADDR_START              (BOOTLOADER_REGION_START-DFU_APP_DATA_RESERVED)
 
 #ifdef NRF52840_XXAA
-STATIC_ASSERT( APPDATA_ADDR_START == 0xED000);
+  // Flash 1024 KB
+  STATIC_ASSERT( APPDATA_ADDR_START == 0xED000);
+
 #else
-STATIC_ASSERT( APPDATA_ADDR_START == 0x6D000);
+  // Flash 512 KB
+  STATIC_ASSERT( APPDATA_ADDR_START == 0x6D000);
 #endif
 
 
@@ -223,9 +232,13 @@ int main(void)
   _ota_dfu = _ota_dfu  || ( button_pressed(BUTTON_DFU) && button_pressed(BUTTON_FRESET) ) ;
   
   bool const valid_app = bootloader_app_is_valid(DFU_BANK_0_REGION_START);
+  bool const just_start_app = valid_app && !dfu_start && (*dbl_reset_mem) == DFU_DBL_RESET_APP;
+
+  if (!just_start_app && APP_ASKS_FOR_SINGLE_TAP_RESET())
+    dfu_start = 1;
 
   // App mode: register 1st reset and DFU startup (nrf52832)
-  if ( ! (dfu_start || !valid_app) )
+  if ( ! (just_start_app || dfu_start || !valid_app) )
   {
     // Register our first reset for double reset detection
     (*dbl_reset_mem) = DFU_DBL_RESET_MAGIC;
@@ -244,7 +257,10 @@ int main(void)
 #endif
   }
 
-  (*dbl_reset_mem) = 0;
+  if (APP_ASKS_FOR_SINGLE_TAP_RESET())
+    (*dbl_reset_mem) = DFU_DBL_RESET_APP;
+  else
+    (*dbl_reset_mem) = 0;
 
   if ( dfu_start || !valid_app )
   {
@@ -293,6 +309,9 @@ int main(void)
     // MBR must be init before start application
     if ( !sd_inited ) softdev_mbr_init();
 
+    // clear in case we kept DFU_DBL_RESET_APP there
+    (*dbl_reset_mem) = 0;
+
     // Select a bank region to use as application region.
     // @note: Only applications running from DFU_BANK_0_REGION_START is supported.
 //#define DFU_BANK_0_REGION_START         CODE_REGION_1_START                                             /**< Bank 0 region start. */
@@ -314,11 +333,11 @@ void adafruit_factory_reset(void)
   // clear all App Data if any
   if ( DFU_APP_DATA_RESERVED )
   {
-    nrf_nvmc_page_erase(APPDATA_ADDR_START);
+    nrfx_nvmc_page_erase(APPDATA_ADDR_START);
   }
 
   // Only need to erase the 1st page of Application code to make it invalid
-  nrf_nvmc_page_erase(DFU_BANK_0_REGION_START);
+  nrfx_nvmc_page_erase(DFU_BANK_0_REGION_START);
 
   // back to normal
   led_state(STATE_FACTORY_RESET_FINISHED);
@@ -463,7 +482,7 @@ uint32_t proc_soc(void)
   {
     pstorage_sys_event_handler(soc_evt);
 
-#ifdef NRF52840_XXAA
+#ifdef NRF_USBD
     extern void tusb_hal_nrf_power_event(uint32_t event);
     /*------------- usb power event handler -------------*/
     int32_t usbevt = (soc_evt == NRF_EVT_POWER_USB_DETECTED   ) ? NRFX_POWER_USB_EVT_DETECTED:

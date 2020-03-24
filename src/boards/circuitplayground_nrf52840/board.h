@@ -47,7 +47,7 @@
 #define BUTTON_PULL           NRF_GPIO_PIN_PULLDOWN
 
 /*------------------------------------------------------------------*/
-/* UART
+/* UART (only used by nRF52832)
  *------------------------------------------------------------------*/
 #define RX_PIN_NUMBER         _PINNUM(0, 30)
 #define TX_PIN_NUMBER         _PINNUM(0, 14)
@@ -70,6 +70,6 @@
 #define UF2_PRODUCT_NAME   "Adafruit Circuit Playground nRF52840"
 #define UF2_VOLUME_LABEL   "CPLAYBTBOOT"
 #define UF2_BOARD_ID       "nRF52840-CircuitPlayground-revD"
-#define UF2_INDEX_URL      "https://www.adafruit.com/product/4300"
+#define UF2_INDEX_URL      "https://www.adafruit.com/product/4333"
 
 #endif // _CPLAY_NRF52840_H
