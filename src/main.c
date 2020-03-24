@@ -180,7 +180,7 @@ int main(void)
 
     uint32_t page_erase_start = USER_FLASH_START;
     while (page_erase_start < USER_FLASH_END) {
-      nrf_nvmc_page_erase(page_erase_start);
+      nrfx_nvmc_page_erase(page_erase_start);
       page_erase_start += CODE_PAGE_SIZE;
     }
     

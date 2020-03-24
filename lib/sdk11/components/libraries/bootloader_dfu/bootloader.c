@@ -193,8 +193,8 @@ static void bootloader_settings_save(bootloader_settings_t * p_settings)
 //    APP_ERROR_CHECK(err_code);
     
     // For LTE-M DFU
-    nrf_nvmc_page_erase(BOOTLOADER_SETTINGS_ADDRESS);
-    nrf_nvmc_write_words(BOOTLOADER_SETTINGS_ADDRESS, (uint32_t *) p_settings, sizeof(bootloader_settings_t) / 4);
+    nrfx_nvmc_page_erase(BOOTLOADER_SETTINGS_ADDRESS);
+    nrfx_nvmc_words_write(BOOTLOADER_SETTINGS_ADDRESS, (uint32_t *) p_settings, sizeof(bootloader_settings_t) / 4);
 
     pstorage_callback_handler(&m_bootsettings_handle, PSTORAGE_STORE_OP_CODE, NRF_SUCCESS, (uint8_t *) p_settings, sizeof(bootloader_settings_t));
   }

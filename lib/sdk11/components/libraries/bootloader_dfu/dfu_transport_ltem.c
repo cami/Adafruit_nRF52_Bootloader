@@ -419,7 +419,7 @@ uint32_t dfu_transport_ltem_update_start(void) {
     
     
 //        sd_flash_write((uint32_t *)(USER_FLASH_START + total_written_app_length), (const uint32_t*)(&app_copy[i]), write_length);
-        nrf_nvmc_write_words((USER_FLASH_START + total_written_app_length), (const uint32_t*)(&app_copy[i]), write_length);
+        nrfx_nvmc_words_write((USER_FLASH_START + total_written_app_length), (const uint32_t*)(&app_copy[i]), write_length);
         
 //        memcpy(_fl_buf + ((USER_FLASH_START + total_written_app_length) & (FLASH_PAGE_SIZE - 1)), &app_copy[i], write_length);
         
