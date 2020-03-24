@@ -41,9 +41,16 @@ else
 NRFJPROG = nrfjprog
 endif
 
+# For Windows
 ifeq ($(OS),Windows_NT)
 PROGFILES = C:/Program Files (x86)
 GNU_INSTALL_ROOT = $(PROGFILES)/GNU Tools ARM Embedded/7 2018-q2-update/bin/
+endif
+
+# For MAC
+ifeq (${shell uname},Darwin)
+PROGFILES = $(HOME)/My_Project
+GNU_INSTALL_ROOT = $(PROGFILES)/gcc-arm-none-eabi-7-2018-q2-update/bin/
 endif
 
 MK := mkdir
@@ -116,6 +123,7 @@ C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/bootloader_settings.c
 C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/bootloader_util.c
 C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/dfu_transport_serial.c
 C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/dfu_transport_ble.c
+C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/dfu_transport_ltem.c
 C_SOURCE_FILES += $(SDK11_PATH)/libraries/bootloader_dfu/dfu_single_bank.c
 
 C_SOURCE_FILES += $(SDK11_PATH)/drivers_nrf/pstorage/pstorage_raw.c
@@ -220,6 +228,14 @@ IPATH += $(SD_API_PATH)/include
 IPATH += $(SD_API_PATH)/include/nrf52
 
 INC_PATHS = $(addprefix -I,$(IPATH))
+
+#******************************************************************************
+# For Debug: SEGGER_RTT PATH
+#******************************************************************************
+SEGGER_PATH     =  src/segger
+C_SOURCE_FILES  += $(SEGGER_PATH)/SEGGER_RTT.c
+C_SOURCE_FILES  += $(SEGGER_PATH)/SEGGER_RTT_printf.c
+IPATH           += $(SEGGER_PATH)
 
 #******************************************************************************
 # Compiler Flags

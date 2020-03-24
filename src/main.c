@@ -54,6 +54,7 @@
 #include "nrf_nvic.h"
 #include "app_error.h"
 #include "nrf_gpio.h"
+#include "nrf_delay.h"
 #include "ble.h"
 #include "nrf.h"
 #include "ble_hci.h"
@@ -82,6 +83,9 @@ void usb_teardown(void);
 
 #endif
 
+//For Debug
+#include "SEGGER_RTT.h"
+
 /*
  * Blinking patterns:
  * - DFU Serial     : LED Status blink
@@ -103,6 +107,7 @@ void usb_teardown(void);
 #define DFU_MAGIC_OTA_RESET             0xA8
 #define DFU_MAGIC_SERIAL_ONLY_RESET     0x4e
 #define DFU_MAGIC_UF2_RESET             0x57
+#define DFU_MAGIC_LTEM_RESET            0x64
 
 #define DFU_DBL_RESET_MAGIC             0x5A1AD5      // SALADS
 #define DFU_DBL_RESET_DELAY             500
@@ -148,11 +153,35 @@ void softdev_mbr_init(void)
 
 int main(void)
 {
+  SEGGER_RTT_WriteString(0, "main(void) has started!\n");
+  
   // SD is already Initialized in case of BOOTLOADER_DFU_OTA_MAGIC
   bool sd_inited = (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_APPJUM);
 
+  
+  
+  // Choose which OTA-DFU mode you would like to enter.
+  // Start Bootloader in LTE-M OTA mode
+  // ToDO: https://devzone.nordicsemi.com/f/nordic-q-a/36928/erase-not-working
+  _ota_dfu = (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_APPJUM) || (NRF_POWER->GPREGRET == DFU_MAGIC_LTEM_RESET);
+  if ((NRF_POWER->GPREGRET == DFU_MAGIC_LTEM_RESET)) {
+    #define USER_FLASH_START   0x26000
+    #define USER_FLASH_END     0xAD000
+    #define CODE_PAGE_SIZE     0x1000
+
+    uint32_t page_erase_start = USER_FLASH_START;
+    while (page_erase_start < USER_FLASH_END) {
+      nrf_nvmc_page_erase(page_erase_start);
+      page_erase_start += CODE_PAGE_SIZE;
+    }
+    
+  }
+  
+  
+  
   // Start Bootloader in BLE OTA mode
-  _ota_dfu = (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_APPJUM) || (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_RESET);
+//  _ota_dfu = (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_APPJUM) || (NRF_POWER->GPREGRET == DFU_MAGIC_OTA_RESET);
+  
 
   // Serial only mode
   bool serial_only_dfu = (NRF_POWER->GPREGRET == DFU_MAGIC_SERIAL_ONLY_RESET);
@@ -189,10 +218,10 @@ int main(void)
   /*------------- Determine DFU mode (Serial, OTA, FRESET or normal) -------------*/
   // DFU button pressed
   dfu_start  = dfu_start || button_pressed(BUTTON_DFU);
-
+  
   // DFU + FRESET are pressed --> OTA
   _ota_dfu = _ota_dfu  || ( button_pressed(BUTTON_DFU) && button_pressed(BUTTON_FRESET) ) ;
-
+  
   bool const valid_app = bootloader_app_is_valid(DFU_BANK_0_REGION_START);
 
   // App mode: register 1st reset and DFU startup (nrf52832)
@@ -221,24 +250,30 @@ int main(void)
   {
     if ( _ota_dfu )
     {
+      // When having started Bootloader in LTE-M OTA mode, enter here.
       led_state(STATE_BLE_DISCONNECTED);
       softdev_init(!sd_inited);
       sd_inited = true;
     }
     else
     {
+      // Enter here, if you press the RESET and DFU button at the same time.
       led_state(STATE_USB_UNMOUNTED);
       usb_init(serial_only_dfu);
     }
-
+    
     // Initiate an update of the firmware.
     APP_ERROR_CHECK( bootloader_dfu_start(_ota_dfu, 0) );
-
+    
     if ( _ota_dfu )
     {
+      SEGGER_RTT_WriteString(0, "main: if ( _ota_dfu )\n");
+  
       sd_softdevice_disable();
     }else
     {
+      SEGGER_RTT_WriteString(0, "main: else\n");
+  
       usb_teardown();
     }
   }
@@ -248,8 +283,8 @@ int main(void)
   {
     adafruit_factory_reset();
   }
-
-  // Reset Board
+    
+    // Reset Board
   board_teardown();
 
   // Jump to application if valid
@@ -260,9 +295,13 @@ int main(void)
 
     // Select a bank region to use as application region.
     // @note: Only applications running from DFU_BANK_0_REGION_START is supported.
+//#define DFU_BANK_0_REGION_START         CODE_REGION_1_START                                             /**< Bank 0 region start. */
+//#define DFU_BANK_1_REGION_START         (DFU_BANK_0_REGION_START + DFU_IMAGE_MAX_SIZE_BANKED)           /**< Bank 1 region start. */
+    SEGGER_RTT_printf(0, "DFU_BANK_0_REGION_START: 0x%x\n", DFU_BANK_0_REGION_START);
+
     bootloader_app_start(DFU_BANK_0_REGION_START);
   }
-
+  
   NVIC_SystemReset();
 }
 
@@ -310,49 +349,50 @@ static uint32_t softdev_init(bool init_softdevice)
   APP_ERROR_CHECK( sd_softdevice_enable(&clock_cfg, app_error_fault_handler) );
   sd_nvic_EnableIRQ(SD_EVT_IRQn);
 
-  /*------------- Configure BLE params  -------------*/
-  extern uint32_t  __data_start__[]; // defined in linker
-  uint32_t ram_start = (uint32_t) __data_start__;
-
-  ble_cfg_t blecfg;
-
-  // Configure the maximum number of connections.
-  varclr(&blecfg);
-  blecfg.gap_cfg.role_count_cfg.adv_set_count = 1;
-  blecfg.gap_cfg.role_count_cfg.periph_role_count  = 1;
-  blecfg.gap_cfg.role_count_cfg.central_role_count = 0;
-  blecfg.gap_cfg.role_count_cfg.central_sec_count  = 0;
-  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_GAP_CFG_ROLE_COUNT, &blecfg, ram_start) );
-
-  // NRF_DFU_BLE_REQUIRES_BONDS
-  varclr(&blecfg);
-  blecfg.gatts_cfg.service_changed.service_changed = 1;
-  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_GATTS_CFG_SERVICE_CHANGED, &blecfg, ram_start) );
-
-  // ATT MTU
-  varclr(&blecfg);
-  blecfg.conn_cfg.conn_cfg_tag = BLE_CONN_CFG_HIGH_BANDWIDTH;
-  blecfg.conn_cfg.params.gatt_conn_cfg.att_mtu = BLEGATT_ATT_MTU_MAX;
-  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_CONN_CFG_GATT, &blecfg, ram_start) );
-
-  // Event Length + HVN queue + WRITE CMD queue setting affecting bandwidth
-  varclr(&blecfg);
-  blecfg.conn_cfg.conn_cfg_tag = BLE_CONN_CFG_HIGH_BANDWIDTH;
-  blecfg.conn_cfg.params.gap_conn_cfg.conn_count   = 1;
-  blecfg.conn_cfg.params.gap_conn_cfg.event_length = BLEGAP_EVENT_LENGTH;
-  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_CONN_CFG_GAP, &blecfg, ram_start) );
-
-  // Enable BLE stack.
-  // Note: Interrupt state (enabled, forwarding) is not work properly if not enable ble
-  APP_ERROR_CHECK( sd_ble_enable(&ram_start) );
-
-#if 0
-  ble_opt_t  opt;
-  varclr(&opt);
-  opt.common_opt.conn_evt_ext.enable = 1; // enable Data Length Extension
-  APP_ERROR_CHECK( sd_ble_opt_set(BLE_COMMON_OPT_CONN_EVT_EXT, &opt) );
-#endif
-
+  // For LTE-M DFU
+//  /*------------- Configure BLE params  -------------*/
+//  extern uint32_t  __data_start__[]; // defined in linker
+//  uint32_t ram_start = (uint32_t) __data_start__;
+//
+//  ble_cfg_t blecfg;
+//
+//  // Configure the maximum number of connections.
+//  varclr(&blecfg);
+//  blecfg.gap_cfg.role_count_cfg.adv_set_count = 1;
+//  blecfg.gap_cfg.role_count_cfg.periph_role_count  = 1;
+//  blecfg.gap_cfg.role_count_cfg.central_role_count = 0;
+//  blecfg.gap_cfg.role_count_cfg.central_sec_count  = 0;
+//  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_GAP_CFG_ROLE_COUNT, &blecfg, ram_start) );
+//
+//  // NRF_DFU_BLE_REQUIRES_BONDS
+//  varclr(&blecfg);
+//  blecfg.gatts_cfg.service_changed.service_changed = 1;
+//  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_GATTS_CFG_SERVICE_CHANGED, &blecfg, ram_start) );
+//
+//  // ATT MTU
+//  varclr(&blecfg);
+//  blecfg.conn_cfg.conn_cfg_tag = BLE_CONN_CFG_HIGH_BANDWIDTH;
+//  blecfg.conn_cfg.params.gatt_conn_cfg.att_mtu = BLEGATT_ATT_MTU_MAX;
+//  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_CONN_CFG_GATT, &blecfg, ram_start) );
+//
+//  // Event Length + HVN queue + WRITE CMD queue setting affecting bandwidth
+//  varclr(&blecfg);
+//  blecfg.conn_cfg.conn_cfg_tag = BLE_CONN_CFG_HIGH_BANDWIDTH;
+//  blecfg.conn_cfg.params.gap_conn_cfg.conn_count   = 1;
+//  blecfg.conn_cfg.params.gap_conn_cfg.event_length = BLEGAP_EVENT_LENGTH;
+//  APP_ERROR_CHECK( sd_ble_cfg_set(BLE_CONN_CFG_GAP, &blecfg, ram_start) );
+//
+//  // Enable BLE stack.
+//  // Note: Interrupt state (enabled, forwarding) is not work properly if not enable ble
+//  APP_ERROR_CHECK( sd_ble_enable(&ram_start) );
+//
+//#if 0
+//  ble_opt_t  opt;
+//  varclr(&opt);
+//  opt.common_opt.conn_evt_ext.enable = 1; // enable Data Length Extension
+//  APP_ERROR_CHECK( sd_ble_opt_set(BLE_COMMON_OPT_CONN_EVT_EXT, &opt) );
+//#endif
+//
   return NRF_SUCCESS;
 }
 

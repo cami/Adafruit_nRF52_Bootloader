@@ -58,7 +58,7 @@ void board_init(void)
   // Use Internal OSC to compatible with all boards
   NRF_CLOCK->LFCLKSRC = CLOCK_LFCLKSRC_SRC_RC;
   NRF_CLOCK->TASKS_LFCLKSTART = 1UL;
-
+  
   button_init(BUTTON_DFU);
   button_init(BUTTON_FRESET);
   NRFX_DELAY_US(100); // wait for the pin state is stable

@@ -14,7 +14,6 @@
 #include <stdint.h>
 #include <string.h>
 
-
 /**
  * @brief Function for aborting current application/bootloader jump to to other app/bootloader.
  *

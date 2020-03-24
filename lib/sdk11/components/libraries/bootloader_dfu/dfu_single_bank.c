@@ -27,6 +27,9 @@
 
 #include "boards.h"
 
+//For Debug
+#include "SEGGER_RTT.h"
+
 static dfu_state_t                  m_dfu_state;                /**< Current DFU state. */
 static uint32_t                     m_image_size;               /**< Size of the image that will be transmitted. */
 
@@ -140,9 +143,21 @@ static void dfu_prepare_func_app_erase(uint32_t image_size)
 
   if ( is_ota() )
   {
-    uint32_t err_code;
-    err_code    = pstorage_clear(&m_storage_handle_app, m_image_size);
-    APP_ERROR_CHECK(err_code);
+//    uint32_t err_code;
+//    err_code    = pstorage_clear(&m_storage_handle_app, m_image_size);
+//    APP_ERROR_CHECK(err_code);
+    
+    // For LTE-M DFU
+      uint32_t page_count = m_image_size / CODE_PAGE_SIZE;
+      if ( m_image_size % CODE_PAGE_SIZE ) page_count++;
+    
+      for ( uint32_t i = 0; i < page_count; i++ )
+      {
+          nrf_nvmc_page_erase(DFU_BANK_0_REGION_START + i * CODE_PAGE_SIZE);
+      }
+    
+      // invoke complete callback
+      pstorage_callback_handler(&m_storage_handle_app, PSTORAGE_CLEAR_OP_CODE, NRF_SUCCESS, NULL, 0);
   }
   else
   {

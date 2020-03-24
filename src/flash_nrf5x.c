@@ -27,6 +27,9 @@
 #include "flash_nrf5x.h"
 #include "boards.h"
 
+//For Debug
+#include "SEGGER_RTT.h"
+
 #define FLASH_PAGE_SIZE           4096
 #define FLASH_CACHE_INVALID_ADDR  0xffffffff
 
@@ -44,7 +47,9 @@ void flash_nrf5x_flush (bool need_erase)
     // - nRF52840 dfu serial/uf2 are USB-based which are DMA and should have no problems.
     //
     // Note: MSC uf2 does not erase page in advance like dfu serial
-    if ( need_erase ) nrf_nvmc_page_erase(_fl_addr);
+    if ( need_erase ) {
+        nrf_nvmc_page_erase(_fl_addr);
+    }
 
     nrf_nvmc_write_words(_fl_addr, (uint32_t *) _fl_buf, FLASH_PAGE_SIZE / 4);
   }
@@ -52,9 +57,11 @@ void flash_nrf5x_flush (bool need_erase)
   _fl_addr = FLASH_CACHE_INVALID_ADDR;
 }
 
+//flash_nrf5x_write(DFU_BANK_0_REGION_START + m_data_received, p_data, data_length, false);
 void flash_nrf5x_write (uint32_t dst, void const *src, int len, bool need_erase)
 {
   uint32_t newAddr = dst & ~(FLASH_PAGE_SIZE - 1);
+    SEGGER_RTT_printf(0, "newAddr: 0x%x\n", newAddr);
 
   if ( newAddr != _fl_addr )
   {
@@ -62,6 +69,8 @@ void flash_nrf5x_write (uint32_t dst, void const *src, int len, bool need_erase)
     _fl_addr = newAddr;
     memcpy(_fl_buf, (void *) newAddr, FLASH_PAGE_SIZE);
   }
+
   memcpy(_fl_buf + (dst & (FLASH_PAGE_SIZE - 1)), src, len);
+  
 }
 

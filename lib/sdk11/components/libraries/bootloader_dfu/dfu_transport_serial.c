@@ -261,6 +261,8 @@ void rpc_transport_event_handler(hci_transport_evt_t event)
     uint8_t   element_index;
 
     retval = hci_transport_rx_pkt_extract(&p_rpc_cmd_buffer, &rpc_cmd_length_read);
+
+  
     if (NRF_SUCCESS == retval)
     {
         // Verify if the data queue can buffer the packet.

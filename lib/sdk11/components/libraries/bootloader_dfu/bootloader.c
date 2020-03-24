@@ -36,6 +36,9 @@
 #include "tusb.h"
 #endif
 
+//For Debug
+#include "SEGGER_RTT.h"
+
 #define APP_TIMER_PRESCALER    0
 
 #define IRQ_ENABLED            0x01                    /**< Field identifying if an interrupt is enabled. */
@@ -46,6 +49,7 @@
 #elif defined(NRF52840_XXAA)
 #define MAX_NUMBER_INTERRUPTS  48
 #endif
+
 
 /**@brief Enumeration for specifying current bootloader status.
  */
@@ -157,16 +161,15 @@ bool bootloader_app_is_valid(uint32_t app_addr)
     {
         return false;
     }
-
+    
     bool success = false;
-
     bootloader_util_settings_get(&p_bootloader_settings);
-
+    
     // The application in CODE region 1 is flagged as valid during update.
     if (p_bootloader_settings->bank_0 == BANK_VALID_APP)
     {
         uint16_t image_crc = 0;
-
+    
         // A stored crc value of 0 indicates that CRC checking is not used.
         if (p_bootloader_settings->bank_0_crc != 0)
         {
@@ -174,10 +177,8 @@ bool bootloader_app_is_valid(uint32_t app_addr)
                                       p_bootloader_settings->bank_0_size,
                                       NULL);
         }
-
         success = (image_crc == p_bootloader_settings->bank_0_crc);
     }
-
     return success;
 }
 
@@ -186,11 +187,17 @@ static void bootloader_settings_save(bootloader_settings_t * p_settings)
 {
   if ( is_ota() )
   {
-    uint32_t err_code = pstorage_clear(&m_bootsettings_handle, sizeof(bootloader_settings_t));
-    APP_ERROR_CHECK(err_code);
+//    uint32_t err_code = pstorage_clear(&m_bootsettings_handle, sizeof(bootloader_settings_t));
+//    APP_ERROR_CHECK(err_code);
+//
+//    err_code = pstorage_store(&m_bootsettings_handle, (uint8_t *) p_settings, sizeof(bootloader_settings_t), 0);
+//    APP_ERROR_CHECK(err_code);
+    
+    // For LTE-M DFU
+    nrf_nvmc_page_erase(BOOTLOADER_SETTINGS_ADDRESS);
+    nrf_nvmc_write_words(BOOTLOADER_SETTINGS_ADDRESS, (uint32_t *) p_settings, sizeof(bootloader_settings_t) / 4);
 
-    err_code = pstorage_store(&m_bootsettings_handle, (uint8_t *) p_settings, sizeof(bootloader_settings_t), 0);
-    APP_ERROR_CHECK(err_code);
+    pstorage_callback_handler(&m_bootsettings_handle, PSTORAGE_STORE_OP_CODE, NRF_SUCCESS, (uint8_t *) p_settings, sizeof(bootloader_settings_t));
   }
   else
   {
@@ -324,6 +331,8 @@ uint32_t bootloader_init(void)
 
 uint32_t bootloader_dfu_start(bool ota, uint32_t timeout_ms)
 {
+    SEGGER_RTT_WriteString(0, "bootloader_dfu_start()\n");
+    
     uint32_t err_code;
 
     // Clear swap if banked update is used.
@@ -332,7 +341,12 @@ uint32_t bootloader_dfu_start(bool ota, uint32_t timeout_ms)
 
     if ( ota )
     {
-      err_code = dfu_transport_ble_update_start();
+      // For LTE-M DFU
+      err_code = dfu_transport_ltem_update_start();
+      m_update_status = BOOTLOADER_COMPLETE;
+      return err_code;
+    
+//      err_code = dfu_transport_ble_update_start();
     }else
     {
       // timeout_ms > 0 is forced startup DFU
@@ -343,10 +357,10 @@ uint32_t bootloader_dfu_start(bool ota, uint32_t timeout_ms)
         app_timer_create(&_dfu_startup_timer, APP_TIMER_MODE_SINGLE_SHOT, dfu_startup_timer_handler);
         app_timer_start(_dfu_startup_timer, APP_TIMER_TICKS(timeout_ms), NULL);
       }
-
+    
       err_code = dfu_transport_serial_update_start();
     }
-
+    
     wait_for_events();
 
     return err_code;
@@ -376,12 +390,14 @@ static void interrupts_disable(void)
 
 void bootloader_app_start(uint32_t app_addr)
 {
+    SEGGER_RTT_WriteString(0, "bootloader: bootloader_app_start()\n");
+  
     // If the applications CRC has been checked and passed, the magic number will be written and we
     // can start the application safely.
     APP_ERROR_CHECK ( sd_softdevice_disable() );
-
+    
     interrupts_disable();
-
+    
 #if 0 // may need set forward irq
     sd_mbr_command_t command =
     {
@@ -391,9 +407,9 @@ void bootloader_app_start(uint32_t app_addr)
 
     sd_mbr_command(&command);
 #endif
-
+    
     APP_ERROR_CHECK( sd_softdevice_vector_table_base_set(CODE_REGION_1_START) );
-
+    
     bootloader_util_app_start(CODE_REGION_1_START);
 }
 
